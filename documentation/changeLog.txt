@@ -4,6 +4,22 @@ http://onehouronelife.com/updateLog.php
 
 
 
+Version 97    2018-May-18
+
+--Adding missing case to used object transition generation.  Thank Fernando GBR.
+
+--Fixed bug in the way time values were recorded in recordedGames.
+
+--Fixed bugs in wall hugging code for floors that was screwing up multi-layer
+  floors that used multiplicative blending (ancient floors).
+
+--Undisturbed grave now marked with known person's name and relationship.
+
+
+
+
+
+
 Server Fixes:
 
 --Fixed bug in lineage server that caused death to not get logged if last words
@@ -27,6 +43,25 @@ Server Fixes:
 --Server now sends non-human death-source ID to lineage server (snake, etc).
 
 --Lineage server displays a variety of death reasons.
+
+--Lineage server tracks and displays deepest descendant generation at bottom
+  of family tree display.
+
+--Added character_dump api call to lineage server.
+
+--Fixed lineage server behavior on IDs that don't exist.
+
+--Turned on bug reporting again, trying to catch bouncing lag bug.
+
+--Fixed bug in out-of-range player PO message.
+
+--Added extra server logging about player update messages to catch bouncing
+  lag bug.
+
+--Clicking on killer's name shows their relationship to you in family tree.
+
+--Family tree Email search now only matches exact email addresses, to thwart
+  brute-force email harvesting through trial and error.  Thanks Brian R.
 
 
 

@@ -375,6 +375,15 @@ SimpleVector<LiveObject> players;
 
 
 
+
+typedef struct GraveInfo {
+        GridPos pos;
+        int playerID;
+    } GraveInfo;
+
+
+
+
 static LiveObject *getLiveObject( int inID ) {
     for( int i=0; i<players.size(); i++ ) {
         LiveObject *o = players.getElement( i );
@@ -5250,6 +5259,8 @@ int main() {
 
         SimpleVector<int> playerIndicesToSendDyingAbout;
 
+        SimpleVector<GraveInfo> newGraves;
+
 
         SimpleVector<UpdateRecord> newUpdates;
         SimpleVector<ChangePosition> newUpdatesPos;
@@ -7974,6 +7985,10 @@ int main() {
                                       deathID );
                         setResponsiblePlayer( -1 );
                         
+                        GraveInfo graveInfo = { dropPos, nextPlayer->id };
+                        newGraves.push_back( graveInfo );
+                        
+
                         ObjectRecord *deathObject = getObject( deathID );
                         
                         int roomLeft = deathObject->numSlots;
@@ -8840,6 +8855,29 @@ int main() {
             }
         
 
+        if( playerIndicesToSendUpdatesAbout.size() > 0 ) {
+            
+            SimpleVector<char> updateList;
+        
+            for( int i=0; i<playerIndicesToSendUpdatesAbout.size(); i++ ) {
+                LiveObject *nextPlayer = players.getElement( 
+                    playerIndicesToSendUpdatesAbout.getElementDirect( i ) );
+                
+                char *playerString = autoSprintf( "%d, ", nextPlayer->id );
+                updateList.appendElementString( playerString );
+                
+                delete [] playerString;
+                }
+            
+            char *updateListString = updateList.getElementString();
+            
+            AppLog::infoF( "Need to send updates about these %d players: %s",
+                           playerIndicesToSendUpdatesAbout.size(),
+                           updateListString );
+            delete [] updateListString;
+            }
+        
+
         
         for( int i=0; i<playerIndicesToSendUpdatesAbout.size(); i++ ) {
             LiveObject *nextPlayer = players.getElement( 
@@ -9222,6 +9260,29 @@ int main() {
             nextPlayer->updateGlobal = false;
             }
         
+        
+
+        if( newUpdates.size() > 0 ) {
+            
+            SimpleVector<char> trueUpdateList;
+            
+            
+            for( int i=0; i<newUpdates.size(); i++ ) {
+                char *s = autoSprintf( 
+                    "%d, ", newUpdatePlayerIDs.getElementDirect( i ) );
+                trueUpdateList.appendElementString( s );
+                delete [] s;
+                }
+            
+            char *updateListString = trueUpdateList.getElementString();
+            
+            AppLog::infoF( "Sending updates about these %d players: %s",
+                           newUpdatePlayerIDs.size(),
+                           updateListString );
+            delete [] updateListString;
+            }
+        
+        
 
         
         SimpleVector<ChangePosition> movesPos;        
@@ -9237,39 +9298,6 @@ int main() {
 
 
 
-        unsigned char *outOfRangeMessage = NULL;
-        int outOfRangeMessageLength = 0;
-        
-        if( newUpdatePlayerIDs.size() > 0 ) {
-            SimpleVector<char> messageChars;
-            
-            messageChars.appendElementString( "PO\n" );
-            
-            for( int i=0; i<newUpdatePlayerIDs.size(); i++ ) {
-                char buffer[20];
-                sprintf( buffer, "%d\n",
-                         newUpdatePlayerIDs.getElementDirect( i ) );
-                
-                messageChars.appendElementString( buffer );
-                }
-            messageChars.push_back( '#' );
-
-            char *outOfRangeMessageText = messageChars.getElementString();
-
-            outOfRangeMessageLength = strlen( outOfRangeMessageText );
-
-            if( outOfRangeMessageLength < maxUncompressedSize ) {
-                outOfRangeMessage = (unsigned char*)outOfRangeMessageText;
-                }
-            else {
-                // compress for all players once here
-                outOfRangeMessage = makeCompressedMessage( 
-                    outOfRangeMessageText, 
-                    outOfRangeMessageLength, &outOfRangeMessageLength );
-                
-                delete [] outOfRangeMessageText;
-                }
-            }
         
 
         
@@ -9464,6 +9492,10 @@ int main() {
         
         // send moves and updates to clients
         
+        
+        SimpleVector<int> playersReceivingPlayerUpdate;
+        
+
         for( int i=0; i<numLive; i++ ) {
             
             LiveObject *nextPlayer = players.getElement(i);
@@ -9696,7 +9728,30 @@ int main() {
                     
                     delete [] monMessage;
                     }
+                
 
+                // everyone gets all grave messages
+                if( newGraves.size() > 0 ) {
+                    
+                    // compose GV messages for this player
+                    
+                    for( int u=0; u<newGraves.size(); u++ ) {
+                        GraveInfo *g = newGraves.getElement( u );
+                        
+                        char *graveMessage = 
+                            autoSprintf( "GV\n%d %d %d\n#", 
+                                         g->pos.x -
+                                         nextPlayer->birthPos.x, 
+                                         g->pos.y -
+                                         nextPlayer->birthPos.y,
+                                         g->playerID );
+                        
+                        sendMessageToPlayer( nextPlayer, graveMessage,
+                                             strlen( graveMessage ) );
+                        delete [] graveMessage;
+                        }
+                    }
+                
                 
 
                 int playerXD = nextPlayer->xd;
@@ -9902,6 +9957,10 @@ int main() {
 
                     double minUpdateDist = maxDist2 * 2;
                     
+                    // greater than maxDis but within maxDist2
+                    SimpleVector<int> middleDistancePlayerIDs;
+                    
+
                     for( int u=0; u<newUpdatesPos.size(); u++ ) {
                         ChangePosition *p = newUpdatesPos.getElement( u );
                         
@@ -9917,6 +9976,10 @@ int main() {
                     
                             if( d < minUpdateDist ) {
                                 minUpdateDist = d;
+                                }
+                            if( d > maxDist && d <= maxDist2 ) {
+                                middleDistancePlayerIDs.push_back(
+                                    newUpdatePlayerIDs.getElementDirect( u ) );
                                 }
                             }
                         }
@@ -9975,6 +10038,8 @@ int main() {
                             }
 
                         if( updateMessage != NULL ) {
+                            playersReceivingPlayerUpdate.push_back( 
+                                nextPlayer->id );
                             
                             int numSent = 
                                 nextPlayer->sock->send( 
@@ -9993,17 +10058,58 @@ int main() {
                                 }
                             }
                         }
-                    else if( minUpdateDist <= maxDist2 && 
-                             outOfRangeMessage != NULL ) {
-                        // everyone in the PU is out of range
-                        // but some of them are in middle range 
+                    
+
+                    if( middleDistancePlayerIDs.size() > 0 ) {
+
+                        unsigned char *outOfRangeMessage = NULL;
+                        int outOfRangeMessageLength = 0;
+        
+                        if( middleDistancePlayerIDs.size() > 0 ) {
+                            SimpleVector<char> messageChars;
+            
+                            messageChars.appendElementString( "PO\n" );
+            
+                            for( int i=0; 
+                                 i<middleDistancePlayerIDs.size(); i++ ) {
+                                char buffer[20];
+                                sprintf( 
+                                    buffer, "%d\n",
+                                    newUpdatePlayerIDs.getElementDirect( i ) );
+                                
+                                messageChars.appendElementString( buffer );
+                                }
+                            messageChars.push_back( '#' );
+
+                            char *outOfRangeMessageText = 
+                                messageChars.getElementString();
+
+                            outOfRangeMessageLength = 
+                                strlen( outOfRangeMessageText );
+
+                            if( outOfRangeMessageLength < 
+                                maxUncompressedSize ) {
+                                outOfRangeMessage = 
+                                    (unsigned char*)outOfRangeMessageText;
+                                }
+                            else {
+                                // compress 
+                                outOfRangeMessage = makeCompressedMessage( 
+                                    outOfRangeMessageText, 
+                                    outOfRangeMessageLength, 
+                                    &outOfRangeMessageLength );
+                
+                                delete [] outOfRangeMessageText;
+                                }
+                            }
                         
-                        // send short PO instead
                         int numSent = 
                             nextPlayer->sock->send( 
                                 outOfRangeMessage, 
                                 outOfRangeMessageLength, 
                                 false, false );
+                        
+                        delete [] outOfRangeMessage;
 
                         if( numSent != outOfRangeMessageLength ) {
                             setDeathReason( nextPlayer, "disconnected" );
@@ -10384,14 +10490,35 @@ int main() {
             }
 
 
-        if( outOfRangeMessage != NULL ) {
-            delete [] outOfRangeMessage;
-            }
 
         for( int u=0; u<mapChanges.size(); u++ ) {
             MapChangeRecord *r = mapChanges.getElement( u );
             delete [] r->formatString;
             }
+
+        if( newUpdates.size() > 0 ) {
+            
+            SimpleVector<char> playerList;
+            
+            for( int i=0; i<playersReceivingPlayerUpdate.size(); i++ ) {
+                char *playerString = 
+                    autoSprintf( 
+                        "%d, ",
+                        playersReceivingPlayerUpdate.getElementDirect( i ) );
+                playerList.appendElementString( playerString );
+                delete [] playerString;
+                }
+            
+            char *playerListString = playerList.getElementString();
+
+            AppLog::infoF( "%d/%d players were sent part of a %d-line PU: %s",
+                           playersReceivingPlayerUpdate.size(),
+                           numLive, newUpdates.size(),
+                           playerListString );
+            
+            delete [] playerListString;
+            }
+        
 
         for( int u=0; u<newUpdates.size(); u++ ) {
             UpdateRecord *r = newUpdates.getElement( u );
