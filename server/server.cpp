@@ -256,6 +256,12 @@ typedef struct LiveObject {
         char heldOriginValid;
         int heldOriginX;
         int heldOriginY;
+        
+
+        // track origin of held separate to use when placing a grave
+        int heldGraveOriginX;
+        int heldGraveOriginY;
+        
 
         // if held object was created by a transition on a target, what is the
         // object ID of the target from the transition?
@@ -380,6 +386,12 @@ typedef struct GraveInfo {
         GridPos pos;
         int playerID;
     } GraveInfo;
+
+
+typedef struct GraveMoveInfo {
+        GridPos posStart;
+        GridPos posEnd;
+    } GraveMoveInfo;
 
 
 
@@ -3374,6 +3386,10 @@ void processLoggedInPlayer( Socket *inSock,
     newObject.heldOriginValid = 0;
     newObject.heldOriginX = 0;
     newObject.heldOriginY = 0;
+
+    newObject.heldGraveOriginX = 0;
+    newObject.heldGraveOriginY = 0;
+
     newObject.heldTransitionSourceID = -1;
     newObject.numContained = 0;
     newObject.containedIDs = NULL;
@@ -5260,6 +5276,7 @@ int main() {
         SimpleVector<int> playerIndicesToSendDyingAbout;
 
         SimpleVector<GraveInfo> newGraves;
+        SimpleVector<GraveMoveInfo> newGraveMoves;
 
 
         SimpleVector<UpdateRecord> newUpdates;
@@ -6282,6 +6299,14 @@ int main() {
                         // know that action is over)
                         playerIndicesToSendUpdatesAbout.push_back( i );
                         
+                        // track whether this USE resulted in something
+                        // new on the ground in case of placing a grave
+                        int newGroundObject = -1;
+                        GridPos newGroundObjectOrigin =
+                            { nextPlayer->heldGraveOriginX,
+                              nextPlayer->heldGraveOriginY };
+                        
+
                         char distanceUseAllowed = false;
                         
                         if( nextPlayer->holdingID > 0 ) {
@@ -6420,13 +6445,19 @@ int main() {
                                     // moving from actor into new target
                                     // (and hand left empty)
                                     setResponsiblePlayer( - nextPlayer->id );
+                                    
                                     setMapObject( m.x, m.y, r->newTarget );
+                                    newGroundObject = r->newTarget;
+                                    
                                     setResponsiblePlayer( -1 );
                                     
                                     transferHeldContainedToMap( nextPlayer,
                                                                 m.x, m.y );
                                     handleHoldingChange( nextPlayer,
                                                          r->newActor );
+
+                                    nextPlayer->heldGraveOriginX = m.x;
+                                    nextPlayer->heldGraveOriginY = m.y;
                                     }
                                 else if( r != NULL &&
                                     // are we old enough to handle
@@ -6462,7 +6493,9 @@ int main() {
                                     if( ! defaultTrans ) {    
                                         handleHoldingChange( nextPlayer,
                                                              r->newActor );
-                                        
+                                        nextPlayer->heldGraveOriginX = m.x;
+                                        nextPlayer->heldGraveOriginY = m.y;
+                                    
                                         if( r->target > 0 ) {    
                                             nextPlayer->heldTransitionSourceID =
                                                 r->target;
@@ -6547,6 +6580,7 @@ int main() {
                                         }
                                     else {    
                                         setMapObject( m.x, m.y, r->newTarget );
+                                        newGroundObject = r->newTarget;
                                         }
                                     
                                     
@@ -6592,6 +6626,9 @@ int main() {
                                     
                                     nextPlayer->holdingID = target;
                                     
+                                    nextPlayer->heldGraveOriginX = m.x;
+                                    nextPlayer->heldGraveOriginY = m.y;
+
                                     nextPlayer->heldOriginValid = 1;
                                     nextPlayer->heldOriginX = m.x;
                                     nextPlayer->heldOriginY = m.y;
@@ -6764,6 +6801,9 @@ int main() {
                                                 }
                                             handleHoldingChange( nextPlayer,
                                                                  r->newActor );
+                                            
+                                            nextPlayer->heldGraveOriginX = m.x;
+                                            nextPlayer->heldGraveOriginY = m.y;
                                             }
                                         else {
                                             // changing floor to non-floor
@@ -6783,7 +6823,11 @@ int main() {
                                                 handleHoldingChange( 
                                                     nextPlayer,
                                                     r->newActor );
-                                            
+                                                nextPlayer->
+                                                    heldGraveOriginX = m.x;
+                                                nextPlayer->
+                                                    heldGraveOriginY = m.y;
+                                    
                                                 usedOnFloor = true;
                                                 }
                                             }
@@ -6853,8 +6897,11 @@ int main() {
 
                                             setResponsiblePlayer( 
                                                 - nextPlayer->id );
+
                                             setMapObject( m.x, m.y, 
                                                           r->newTarget );
+                                            newGroundObject = r->newTarget;
+
                                             setResponsiblePlayer( -1 );
                                     
                                             transferHeldContainedToMap( 
@@ -6862,11 +6909,17 @@ int main() {
                                             
                                             handleHoldingChange( nextPlayer,
                                                                  r->newActor );
+                                            
+                                            nextPlayer->heldGraveOriginX = m.x;
+                                            nextPlayer->heldGraveOriginY = m.y;
                                             }
                                         else {
                                             handleHoldingChange( nextPlayer,
                                                                  r->newActor );
-                                        
+                                            
+                                            nextPlayer->heldGraveOriginX = m.x;
+                                            nextPlayer->heldGraveOriginY = m.y;
+                                    
                                             setResponsiblePlayer( 
                                                 - nextPlayer->id );
                                             
@@ -6880,6 +6933,7 @@ int main() {
                                             else {    
                                                 setMapObject( m.x, m.y, 
                                                               r->newTarget );
+                                                newGroundObject = r->newTarget;
                                                 }
                                             
                                             setResponsiblePlayer( -1 );
@@ -6891,6 +6945,22 @@ int main() {
                                             }
                                         }
                                     }
+                                }
+                            }
+
+
+                        if( newGroundObject > 0 ) {
+
+                            ObjectRecord *o = getObject( newGroundObject );
+                            
+                            if( strstr( o->description, "origGrave" ) 
+                                != NULL ) {
+                                
+                                GraveMoveInfo g = { newGroundObjectOrigin.x,
+                                                    newGroundObjectOrigin.y,
+                                                    m.x,
+                                                    m.y };
+                                newGraveMoves.push_back( g );
                                 }
                             }
                         }
@@ -9745,6 +9815,32 @@ int main() {
                                          g->pos.y -
                                          nextPlayer->birthPos.y,
                                          g->playerID );
+                        
+                        sendMessageToPlayer( nextPlayer, graveMessage,
+                                             strlen( graveMessage ) );
+                        delete [] graveMessage;
+                        }
+                    }
+
+
+                // everyone gets all grave move messages
+                if( newGraveMoves.size() > 0 ) {
+                    
+                    // compose GM messages for this player
+                    
+                    for( int u=0; u<newGraveMoves.size(); u++ ) {
+                        GraveMoveInfo *g = newGraveMoves.getElement( u );
+                        
+                        char *graveMessage = 
+                            autoSprintf( "GM\n%d %d %d %d\n#", 
+                                         g->posStart.x -
+                                         nextPlayer->birthPos.x,
+                                         g->posStart.y -
+                                         nextPlayer->birthPos.y,
+                                         g->posEnd.x -
+                                         nextPlayer->birthPos.x,
+                                         g->posEnd.y -
+                                         nextPlayer->birthPos.y );
                         
                         sendMessageToPlayer( nextPlayer, graveMessage,
                                              strlen( graveMessage ) );
