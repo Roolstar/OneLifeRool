@@ -99,6 +99,9 @@ static float lastMouseY = 0;
 static char teaserVideo = false;
 
 
+static char showBugMessage = false;
+static const char *bugEmail = "jason" "rohrer" "@" "fastmail.fm";
+
 
 
 
@@ -820,6 +823,14 @@ int pendingCMDecompressedSize = 0;
 
 SimpleVector<char*> readyPendingReceivedMessages;
 
+static double lastServerMessageReceiveTime = 0;
+
+// while player action pending, measure largest gap between sequential 
+// server messages
+// This is an approximation of our outtage time.
+static double largestPendingMessageTimeGap = 0;
+
+
 
 // NULL if there's no full message available
 char *getNextServerMessage() {
@@ -897,6 +908,20 @@ char *getNextServerMessage() {
     if( index == -1 ) {
         return NULL;
         }
+
+    // terminal character means message arrived
+
+    double curTime = game_getCurrentTime();
+    
+    double gap = curTime - lastServerMessageReceiveTime;
+    
+    if( gap > largestPendingMessageTimeGap ) {
+        largestPendingMessageTimeGap = gap;
+        }
+
+    lastServerMessageReceiveTime = curTime;
+
+
     
     char *message = new char[ index + 1 ];
     
@@ -1645,7 +1670,9 @@ LivingLifePage::LivingLifePage()
     // we're not showing a cursor on note paper, so arrow key behavior
     // is confusing.
     mSayField.setIgnoreArrowKeys( true );
-
+    // drawn under world at (0,1000), don't allow click to focus
+    mSayField.setIgnoreMouse( true );
+    
     initLiveTriggers();
 
     for( int i=0; i<4; i++ ) {
@@ -4880,6 +4907,10 @@ void LivingLifePage::draw( doublePair inViewCenter,
         // now draw non-behind-marked map objects in this row
         // OVER the player objects in this row (so that pick up and set down
         // looks correct, and so players are behind all same-row objects)
+
+        // we determine what counts as a wall through floorHugging
+
+        // first permanent, non-wall objects
         for( int x=xStart; x<=xEnd; x++ ) {
             int mapI = y * mMapD + x;
             
@@ -4890,20 +4921,79 @@ void LivingLifePage::draw( doublePair inViewCenter,
             int screenX = CELL_D * ( x + mMapOffsetX - mMapD / 2 );
 
 
-            if( mMap[ mapI ] > 0 && 
-                ! getObject( mMap[ mapI ] )->drawBehindPlayer &&
-                mMapMoveSpeeds[ mapI ] == 0 ) {
+            if( mMap[ mapI ] > 0 ) {
+                ObjectRecord *o = getObject( mMap[ mapI ] );
                 
-                drawMapCell( mapI, screenX, screenY );
-                cellDrawn[ mapI ] = true;
+                if( ! o->drawBehindPlayer &&
+                    ! o->floorHugging &&
+                    o->permanent &&
+                    mMapMoveSpeeds[ mapI ] == 0 ) {
+                
+                    drawMapCell( mapI, screenX, screenY );
+                    cellDrawn[ mapI ] = true;
+                    }
                 }
             }
 
+
+        // then non-permanent, non-wall objects
+        for( int x=xStart; x<=xEnd; x++ ) {
+            int mapI = y * mMapD + x;
+            
+            if( cellDrawn[ mapI ] ) {
+                continue;
+                }
+            
+            int screenX = CELL_D * ( x + mMapOffsetX - mMapD / 2 );
+
+
+            if( mMap[ mapI ] > 0 ) {
+                ObjectRecord *o = getObject( mMap[ mapI ] );
+                
+                if( ! o->drawBehindPlayer &&
+                    ! o->floorHugging &&
+                    ! o->permanent &&
+                    mMapMoveSpeeds[ mapI ] == 0 ) {
+                
+                    drawMapCell( mapI, screenX, screenY );
+                    cellDrawn[ mapI ] = true;
+                    }
+                }
+            }
+
+
         // now draw held flying objects on top of objects in this row
+        // but still behind walls in this row
         for( int i=0; i<heldToDrawOnTop.size(); i++ ) {
             drawObjectAnim( heldToDrawOnTop.getElementDirect( i ) );
             }
 
+
+
+        // then permanent, wall objects
+        for( int x=xStart; x<=xEnd; x++ ) {
+            int mapI = y * mMapD + x;
+            
+            if( cellDrawn[ mapI ] ) {
+                continue;
+                }
+            
+            int screenX = CELL_D * ( x + mMapOffsetX - mMapD / 2 );
+
+
+            if( mMap[ mapI ] > 0 ) {
+                ObjectRecord *o = getObject( mMap[ mapI ] );
+                
+                if( ! o->drawBehindPlayer &&
+                    o->floorHugging &&
+                    o->permanent &&
+                    mMapMoveSpeeds[ mapI ] == 0 ) {
+                
+                    drawMapCell( mapI, screenX, screenY );
+                    cellDrawn[ mapI ] = true;
+                    }
+                }
+            }
         } // end loop over rows on screen
     
 
@@ -6424,6 +6514,36 @@ void LivingLifePage::draw( doublePair inViewCenter,
             
 
         
+        if( showBugMessage ) {
+            
+            setDrawColor( 1, 1, 1, 0.5 );
+            
+            drawRect( lastScreenViewCenter, 612, 252 );
+
+
+            setDrawColor( 1, 1, 1, 0.5 );
+            
+            
+            setDrawColor( 0.2, 0.2, 0.2, 0.85  );
+            
+            drawRect( lastScreenViewCenter, 600, 240 );
+            
+            setDrawColor( 1, 1, 1, 1 );
+
+            doublePair messagePos = lastScreenViewCenter;
+
+            messagePos.y += 200;
+
+            drawMessage( "bugMessage1", messagePos );
+
+            messagePos = lastScreenViewCenter;
+
+
+            drawMessage( bugEmail, messagePos );
+            
+            messagePos.y -= 200;
+            drawMessage( "bugMessage2", messagePos );
+            }
         }
     
     }
@@ -6624,7 +6744,7 @@ static char isCategory( int inID ) {
     if( c == NULL ) {
         return false;
         }
-    if( c->objectIDSet.size() > 0 ) {
+    if( ! c->isPattern && c->objectIDSet.size() > 0 ) {
         return true;
         }
     return false;
@@ -7005,6 +7125,10 @@ static char shouldCreationSoundPlay( int inOldID, int inNewID ) {
     
     ObjectRecord *obj = getObject( inNewID );
 
+    if( obj->creationSound.numSubSounds == 0 ) {
+        return false;
+        }
+
     if( inOldID > 0 && inNewID > 0 ) {
         ObjectRecord *oldObj = getObject( inOldID );
         
@@ -7111,6 +7235,18 @@ void LivingLifePage::sendBugReport( int inBugNumber ) {
 
     sendToServerSocket( bugMessage );
     delete [] bugMessage;
+
+    FILE *f = fopen( "stdout.txt", "r" );
+
+    if( f != NULL ) {
+        // stdout.txt exists
+        
+        printf( "Bug report sent, telling user to email stdout.txt to us.\n" );
+        
+        fclose( f );
+        
+        showBugMessage = true;
+        }
     }
     
 
@@ -7710,15 +7846,25 @@ void LivingLifePage::step() {
         }
 
 
+    double curTime = game_getCurrentTime();
+
     if( playerActionPending && 
         ourObject != NULL && 
-        game_getCurrentTime() - 
-        ourObject->pendingActionAnimationStartTime > 10 ) {
+        curTime - lastServerMessageReceiveTime < 1 &&
+        curTime - ourObject->pendingActionAnimationStartTime > 
+        10 + largestPendingMessageTimeGap ) {
         
-        // been bouncing for four seconds with no answer from server
-        
+        // been bouncing for ten seconds with no answer from server
+        // in the mean time, we have seen other messages arrive from server
+        // (so any network outage is over)
+
         printf( "Been waiting for response to our action request "
-                "from server for > 10 seconds, giving up\n" );
+                "from server for %.2f seconds, and last server message "
+                "received %.2f sec ago, saw a message time gap along the way "
+                "of %.2f, giving up\n",
+                curTime - ourObject->pendingActionAnimationStartTime,
+                curTime - lastServerMessageReceiveTime,
+                largestPendingMessageTimeGap );
 
         sendBugReport( 1 );
 
@@ -8944,27 +9090,7 @@ void LivingLifePage::step() {
                                 else if( responsiblePlayerID < -1 ) {
                                     // player caused this object to change
                                     
-                                    if( newObj->creationSound.numSubSounds == 0
-                                        ||
-                                        ! shouldCreationSoundPlay( old, 
-                                                                   newID ) ) {
-                                        // no creation sound will play for new
-                                        // (if it will, it will be played
-                                        //  below)
-                                        ObjectRecord *obj = getObject( old );
-                                        
-                                        // don't play using sound unless
-                                        // if they are both use dummies
-                                        if( !bothSameUseParent( old, newID )
-                                            &&
-                                            obj->usingSound.numSubSounds 
-                                            > 0 ) {    
-                                            
-                                            playSound( 
-                                                obj->usingSound,
-                                                getVectorFromCamera( x, y ) );
-                                            }
-                                        }
+                                    // sound will be played elsewhere
                                     }
                                 }
                             
@@ -9293,6 +9419,9 @@ void LivingLifePage::step() {
                 o.heldByDropOffset.x = 0;
                 o.heldByDropOffset.y = 0;
                 
+                o.jumpOutOfArmsSent = false;
+                
+
                 o.ridingOffset.x = 0;
                 o.ridingOffset.y = 0;
 
@@ -9708,6 +9837,7 @@ void LivingLifePage::step() {
                         
                         char creationSoundPlayed = false;
                         char otherSoundPlayed = false;
+                        char groundSoundPlayed = false;
                         
 
                         if( justAte && 
@@ -10111,8 +10241,26 @@ void LivingLifePage::step() {
                                                 heldTransitionSourceID;
                                             }
                                         
+                                        if( heldTransitionSourceID > 0 ) {
+                                            TransRecord *groundTrans =
+                                                getTrans( 
+                                                    oldHeld, 
+                                                    heldTransitionSourceID );
+                                            if( groundTrans != NULL &&
+                                                groundTrans->newTarget > 0 &&
+                                                groundTrans->newTarget ==
+                                                existing->holdingID ) {
+                                                if( shouldCreationSoundPlay(
+                                                    groundTrans->target,
+                                                    groundTrans->newTarget ) ) {
+                                                    groundSoundPlayed = true;
+                                                    }
+                                                }
+                                            }
+                                        
 
-                                        if( testAncestor > 0 ) {
+                                        if( ! groundSoundPlayed &&
+                                            testAncestor > 0 ) {
                                             // new held object is result
                                             // of a transtion
                                             // (otherwise, it has been
@@ -10226,6 +10374,7 @@ void LivingLifePage::step() {
                                         
                                         if( ! otherSoundPlayed && 
                                             ! creationSoundPlayed &&
+                                            ! groundSoundPlayed &&
                                             ! clothingSoundPlayed ) {
                                             // play generic pickup sound
 
@@ -10277,6 +10426,7 @@ void LivingLifePage::step() {
                             heldTransitionSourceID > 0 &&
                             ! creationSoundPlayed &&
                             ! clothingSoundPlayed &&
+                            ! groundSoundPlayed &&
                             ! otherSoundPlayed ) {
                             
                             
@@ -10812,6 +10962,8 @@ void LivingLifePage::step() {
                 
                 if( babyO != NULL && existing != NULL ) {
                     babyO->heldByAdultID = existing->id;
+                    babyO->jumpOutOfArmsSent = false;
+                    
                     // stop crying when held
                     babyO->tempAgeOverrideSet = false;
                     
@@ -11927,6 +12079,8 @@ void LivingLifePage::step() {
                         char *strUpper = stringToUpperCase(
                             lastAteObj->description );
 
+                        stripDescriptionComment( strUpper );
+
                         const char *key = "lastAte";
                         
                         if( lastAteObj->permanent ) {
@@ -12757,6 +12911,11 @@ void LivingLifePage::step() {
             playerActionPending = true;
             ourLiveObject->pendingAction = true;
             
+            // start measuring again to detect network outages 
+            // during this pending action
+            largestPendingMessageTimeGap = 0;
+            
+
             // start on first frame to force at least one cycle no
             // matter how fast the server responds
             ourLiveObject->pendingActionAnimationProgress = 
@@ -13581,6 +13740,10 @@ void LivingLifePage::pointerMove( float inX, float inY ) {
         
     getLastMouseScreenPos( &lastScreenMouseX, &lastScreenMouseY );
 
+    if( showBugMessage ) {
+        return;
+        }
+
     if( mServerSocket == -1 ) {
         // dead
         return;
@@ -13817,6 +13980,10 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
     lastMouseX = inX;
     lastMouseY = inY;
 
+    if( showBugMessage ) {
+        return;
+        }
+    
     if( mServerSocket == -1 ) {
         // dead
         return;
@@ -13860,16 +14027,22 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
 
     if( ourLiveObject->heldByAdultID != -1 ) {
         // click from a held baby
-        
-        // send dummy move message right away to make baby jump out of arms
 
-        // we don't need to use baby's true position here... they are
-        // in arms
-        char *moveMessage = autoSprintf( "MOVE %d %d 1 0#",
-                                         ourLiveObject->xd,
-                                         ourLiveObject->yd );
-        sendToServerSocket( moveMessage );
-        delete [] moveMessage;
+        // only send once, even on multiple clicks
+        if( ! ourLiveObject->jumpOutOfArmsSent ) {    
+            // send dummy move message right away to make baby jump out of arms
+            
+            // we don't need to use baby's true position here... they are
+            // in arms
+            char *moveMessage = autoSprintf( "MOVE %d %d 1 0#",
+                                             ourLiveObject->xd,
+                                             ourLiveObject->yd );
+            sendToServerSocket( moveMessage );
+            delete [] moveMessage;
+            
+            ourLiveObject->jumpOutOfArmsSent = true;
+            }
+        
         return;
         }
     
@@ -14956,6 +15129,10 @@ void LivingLifePage::pointerDrag( float inX, float inY ) {
     lastMouseX = inX;
     lastMouseY = inY;
     getLastMouseScreenPos( &lastScreenMouseX, &lastScreenMouseY );
+    
+    if( showBugMessage ) {
+        return;
+        }
     }
 
 
@@ -14963,6 +15140,10 @@ void LivingLifePage::pointerUp( float inX, float inY ) {
     lastMouseX = inX;
     lastMouseY = inY;
 
+    if( showBugMessage ) {
+        return;
+        }
+    
 
     if( mServerSocket == -1 ) {
         // dead
@@ -15010,6 +15191,14 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
         // dead
         return;
         }
+
+    if( showBugMessage ) {
+        if( inASCII == '%' ) {
+            showBugMessage = false;
+            }
+        return;
+        }
+
     
     switch( inASCII ) {
         /*
@@ -15147,6 +15336,9 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
 
 
 void LivingLifePage::specialKeyDown( int inKeyCode ) {
+    if( showBugMessage ) {
+        return;
+        }
     
     if( mServerSocket == -1 ) {
         // dead

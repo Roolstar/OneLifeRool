@@ -1183,8 +1183,11 @@ void EditorScenePage::drawUnderComponents( doublePair inViewCenter,
             }
 
 
-        // draw behind stuff first
-        for( int b=0; b<2; b++ ) {
+        // draw behind stuff first, b=0
+        // then people, b=1, with permanent objects in front
+        // then non-permanent objects, b=2
+        // then walls (floor hugging), b=3
+        for( int b=0; b<4; b++ ) {
             
 
             if( b == 1 ) {
@@ -1411,9 +1414,22 @@ void EditorScenePage::drawUnderComponents( doublePair inViewCenter,
                     
                     if( ( b == 0 && ! o->drawBehindPlayer ) 
                         ||
-                        ( b == 1 && o->drawBehindPlayer ) ) {
+                        ( b != 0 && o->drawBehindPlayer ) ) {
                         continue;
                         }
+                    if( ( b == 3 && ! o->floorHugging ) 
+                        ||
+                        ( b != 3 && o->floorHugging 
+                          && ! o->drawBehindPlayer) ) {
+                        continue;
+                        }
+                    
+                    if( ( b == 1 && ! o->permanent ) ||
+                        ( b == 2 && o->permanent ) ) {
+                        continue;
+                        }
+                    
+
                     
                     doublePair cellPos = pos;
                     

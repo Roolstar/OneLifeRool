@@ -2439,7 +2439,15 @@ void handleDrop( int inX, int inY, LiveObject *inDroppingPlayer,
             babyO->ys = targetY;
             
             babyO->heldByOther = false;
-
+            
+            // force baby pos
+            // baby can wriggle out of arms in same server step that it was
+            // picked up.  In that case, the clients will never get the
+            // message that the baby was picked up.  The baby client could
+            // be in the middle of a client-side move, and we need to force
+            // them back to their true position.
+            babyO->posForced = true;
+            
             if( isFertileAge( inDroppingPlayer ) ) {    
                 // reset food decrement time
                 babyO->foodDecrementETASeconds =
@@ -4451,8 +4459,8 @@ int main() {
         SettingsManager::getIntSetting( "nextPlayerID", 2 );
 
 
-    // make backup and delete old backup every two days
-    AppLog::setLog( new FileLog( "log.txt", 172800 ) );
+    // make backup and delete old backup every day
+    AppLog::setLog( new FileLog( "log.txt", 86400 ) );
 
     AppLog::setLoggingLevel( Log::DETAIL_LEVEL );
     AppLog::printAllMessages( true );
@@ -10171,7 +10179,8 @@ int main() {
                                 char buffer[20];
                                 sprintf( 
                                     buffer, "%d\n",
-                                    newUpdatePlayerIDs.getElementDirect( i ) );
+                                    middleDistancePlayerIDs.
+                                    getElementDirect( i ) );
                                 
                                 messageChars.appendElementString( buffer );
                                 }

@@ -4,9 +4,96 @@ http://onehouronelife.com/updateLog.php
 
 
 
-Version 99    ???
+
+Version 102   ???
+
+--Fixed scene editor to display behind floor hugging objects correctly.
+
+--Fixed bug in client sending multiple jump-out-of-arms move messages due to
+  rapid clickly by held-baby-player, resulting in the server registering false
+  moves after the jump-out-of-arms, and a bouncing-forever bug as a result.
+  Thanks Gabriel G.
+
+--Fixed overlap of food bar with gui in object editor.
+
+--Widget for Using Sound visible for all objects in object editor.
+
+--Fixed sound sound-doubling issues (dumping water into empty pond, grabbing
+  second-to-last stone from stone pile).
+
+--Fixed so that comment (after # text) is hidden from eaten food description.
+
+
+
+
+
+Server Fixes:
+
+--Fixed one source of bouncing-forever bug where baby move arrives in same
+  server step as parent's pick-up action.  Thanks Lynne C.
+
+
+
+
+Version 100   2018-May-25
+
+--Support for marking categories as patterns.
+
+--Support for auto-generated transitions based on new pattern categories.
+  Example:  define transition web for pink roses, and then set the pink rose
+  objects as the pattern for all white and red rose objects (seeds, sprouts,
+  etc.)  Wherever a transition involves at least two objects that are both part
+  of a pattern of the same size, the transition is replicated for all the other
+  members of that pattern.  Unlike other categories, which never appear in the
+  game and are just abstract placeholders to be filled in by member objects,
+  pattern categories have a real object as their parent (example:  pink rose
+  seed, with children red and white rose seeds).
+
+
+
+
+
+
+Version 99    2018-May-24
 
 --Label for a grave of a known person now moves with bone pile.
+
+--Fixed editor use chance and sim GUI elements disappearing with object picker
+  cleared.
+
+--Fixed so that non-permanent objects on ground are drawn in front of permanent
+  objects.  Thus, hand cart handle sticks out in front of well.
+
+--Fixed so that walls drawn in front of other tiles in row, improving overlaps
+  for trees, carts, and other overhanging objects.
+
+--Client detects largest message time gaps between server messages to prevent
+  it from sending BUG report messages to server during true network outages.
+
+--Fixed wayward chat sheet pop-up.  Thanks Yuyu.
+
+--Client now informs player when BUG report sent to server, and asks them to
+  email stdout.txt, if stdout.txt exists.
+
+--Face portrait output in editor fixed to clear picked layer first (or else
+  picked layer appears in every age portrait).
+
+
+
+
+Server Fixes:
+
+--Bug reports off again until better client-side differentiation in place.
+
+--log.txt backed up and cleared every 24 hours instead of 48 to save disk space.
+
+--Fixed bugs in lineage server triggered by playerIDs that are the same between
+  servers.
+
+--Fixed player invisibility bug.  Thanks Yuyu.
+
+--Fixed various edge cases in random family member picking code.
+
 
 
 
