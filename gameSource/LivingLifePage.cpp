@@ -1284,6 +1284,7 @@ void LivingLifePage::computePathToDest( LiveObject *inObject ) {
                                   &closestFound );
             inObject->xd = inObject->waypointX;
             inObject->yd = inObject->waypointY;
+            inObject->destTruncated = false;
             }
         }
     else {
@@ -7870,6 +7871,7 @@ void LivingLifePage::step() {
 
         // end it
         ourObject->pendingActionAnimationProgress = 0;
+        ourObject->pendingActionAnimationTotalProgress = 0;
         ourObject->pendingAction = false;
                                 
         playerActionPending = false;
@@ -7899,6 +7901,7 @@ void LivingLifePage::step() {
         
         ourObject->xd = goodX;
         ourObject->yd = goodY;
+        ourObject->destTruncated = false;
         }
     
     
@@ -9628,6 +9631,25 @@ void LivingLifePage::step() {
                         }
                     
                     if( existing != NULL &&
+                        existing->destTruncated &&
+                        ( existing->xd != o.xd ||
+                          existing->yd != o.yd ) ) {
+                        // edge case:
+                        // our move was truncated due to an obstacle
+                        // but then after that we tried to move to what
+                        // the server saw as our current location
+                        // the server will send a PU for that last move
+                        // to end it immediately, but our xd,yd will still
+                        // be set from the truncated move
+                        // treat this PU as a force
+                        printf( "Artificially forcing PU position %d,%d "
+                                "because it mismatches our last truncated "
+                                "move destination %d,%d\n",
+                                o.xd, o.yd, existing->xd, existing->yd );
+                        forced = true;
+                        }
+                    
+                    if( existing != NULL &&
                         existing->id != ourID &&
                         existing->currentSpeed != 0 &&
                         ! forced ) {
@@ -9722,6 +9744,7 @@ void LivingLifePage::step() {
                             
                             existing->xd = o.xd;
                             existing->yd = o.yd;
+                            existing->destTruncated = false;
                             }
                         existing->outOfRange = false;
 
@@ -9812,6 +9835,8 @@ void LivingLifePage::step() {
                                 existing->actionTargetY = actionTargetY;
                                 existing->pendingActionAnimationProgress = 
                                     0.025 * frameRateFactor;
+                                existing->pendingActionAnimationTotalProgress = 
+                                    existing->pendingActionAnimationProgress;
                                 }
 
                             if( heldOriginValid || 
@@ -10536,7 +10561,8 @@ void LivingLifePage::step() {
                             
                             existing->xd = o.xd;
                             existing->yd = o.yd;
-                            
+                            existing->destTruncated = false;
+
                             if( existing->lastHeldByRawPosSet ) {    
                                 existing->heldByDropOffset =
                                     sub( existing->lastHeldByRawPos,
@@ -10610,7 +10636,7 @@ void LivingLifePage::step() {
 
                             existing->xd = o.xd;
                             existing->yd = o.yd;
-
+                            existing->destTruncated = false;
                             }
                         
                         if( existing->id == ourID ) {
@@ -10628,6 +10654,8 @@ void LivingLifePage::step() {
 
                             if( forced ) {
                                 existing->pendingActionAnimationProgress = 0;
+                                existing->pendingActionAnimationTotalProgress =
+                                    0;
                                 existing->pendingAction = false;
                                 
                                 playerActionPending = false;
@@ -10734,6 +10762,7 @@ void LivingLifePage::step() {
 
                         o.pendingAction = false;
                         o.pendingActionAnimationProgress = 0;
+                        o.pendingActionAnimationTotalProgress = 0;
                         
                         o.currentPos.x = o.xd;
                         o.currentPos.y = o.yd;
@@ -11255,6 +11284,8 @@ void LivingLifePage::step() {
                                 existing->xd = o.xd;
                                 existing->yd = o.yd;
                                 
+                                existing->destTruncated = truncated;
+
                                 if( existing->id != ourID ) {
                                     // look at how far we think object is
                                     // from current fractional position
@@ -11607,6 +11638,8 @@ void LivingLifePage::step() {
                                 // (no longer possible, since truncated)
 
                                 existing->pendingActionAnimationProgress = 0;
+                                existing->pendingActionAnimationTotalProgress =
+                                    0;
                                 existing->pendingAction = false;
                                 
                                 playerActionPending = false;
@@ -12856,11 +12889,13 @@ void LivingLifePage::step() {
         
         
         
+        double progressInc = 0.025 * frameRateFactor;
 
         if( o->id == ourID &&
             ( o->pendingAction || o->pendingActionAnimationProgress != 0 ) ) {
             
-            o->pendingActionAnimationProgress += 0.025 * frameRateFactor;
+            o->pendingActionAnimationProgress += progressInc;
+            o->pendingActionAnimationTotalProgress += progressInc;
             
             if( o->pendingActionAnimationProgress > 1 ) {
                 if( o->pendingAction ) {
@@ -12871,6 +12906,7 @@ void LivingLifePage::step() {
                     // no longer pending, finish last cycle by snapping
                     // back to 0
                     o->pendingActionAnimationProgress = 0;
+                    o->pendingActionAnimationTotalProgress = 0;
                     o->actionTargetTweakX = 0;
                     o->actionTargetTweakY = 0;
                     }
@@ -12878,17 +12914,19 @@ void LivingLifePage::step() {
             }
         else if( o->id != ourID && o->pendingActionAnimationProgress != 0 ) {
             
-            o->pendingActionAnimationProgress += 0.025 * frameRateFactor;
+            o->pendingActionAnimationProgress += progressInc;
+            o->pendingActionAnimationTotalProgress += progressInc;
             
             if( o->pendingActionAnimationProgress > 1 ) {
-                    // no longer pending, finish last cycle by snapping
-                    // back to 0
-                    o->pendingActionAnimationProgress = 0;
-                    o->actionTargetTweakX = 0;
-                    o->actionTargetTweakY = 0;
-                    }
+                // no longer pending, finish last cycle by snapping
+                // back to 0
+                o->pendingActionAnimationProgress = 0;
+                o->pendingActionAnimationTotalProgress = 0;
+                o->actionTargetTweakX = 0;
+                o->actionTargetTweakY = 0;
                 }
             }
+        }
     
 
     if( nextActionMessageToSend != NULL
@@ -12920,6 +12958,8 @@ void LivingLifePage::step() {
             // matter how fast the server responds
             ourLiveObject->pendingActionAnimationProgress = 
                 0.025 * frameRateFactor;
+            ourLiveObject->pendingActionAnimationTotalProgress =
+                ourLiveObject->pendingActionAnimationProgress;
 
             ourLiveObject->pendingActionAnimationStartTime = 
                 game_getCurrentTime();
@@ -12938,7 +12978,7 @@ void LivingLifePage::step() {
         // AND animation has played for a bit
         // AND server agrees with our position
         if( ! ourLiveObject->inMotion && 
-            ourLiveObject->pendingActionAnimationProgress > 0.25 &&
+            ourLiveObject->pendingActionAnimationTotalProgress > 0.25 &&
             ourLiveObject->xd == ourLiveObject->xServer &&
             ourLiveObject->yd == ourLiveObject->yServer ) {
             
@@ -12948,6 +12988,13 @@ void LivingLifePage::step() {
             // queued action waiting for our move to end
             sendToServerSocket( nextActionMessageToSend );
             
+            // reset the timer, because we've gotten some information
+            // back from the server about our action
+            // so it doesn't seem like we're experiencing a dropped-message
+            // bug just yet.
+            ourLiveObject->pendingActionAnimationStartTime = 
+                game_getCurrentTime();
+
 
             if( nextActionEating ) {
                 // don't play eating sound here until 
@@ -14921,7 +14968,8 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
         
         ourLiveObject->xd = moveDestX;
         ourLiveObject->yd = moveDestY;
-        
+        ourLiveObject->destTruncated = false;
+
         ourLiveObject->inMotion = true;
 
 
@@ -14946,6 +14994,7 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
             // adjust move to closest possible
             ourLiveObject->xd = ourLiveObject->closestDestIfPathFailedX;
             ourLiveObject->yd = ourLiveObject->closestDestIfPathFailedY;
+            ourLiveObject->destTruncated = false;
             
             if( ourLiveObject->xd == oldXD && ourLiveObject->yd == oldYD ) {
                 // completely blocked in, no path at all toward dest
