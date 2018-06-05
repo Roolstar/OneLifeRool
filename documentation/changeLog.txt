@@ -3,6 +3,26 @@ This file only list changes to game code.  Changes to content can be found here:
 http://onehouronelife.com/updateLog.php
 
 
+
+
+
+Server Fixes:
+
+--Fixed so that useChance applies in last transition back to parent object
+  (example:  refilling last step of pond should have 1/5 chance of taking pond
+  to full state, when before it had 1/1 chance, allowing for an infinite water
+  exploit).  Thanks Eve, YAHG, and Rebel.
+
+--Support for NOT dying when riding over a deadly object (like a rattlesnake)
+  on a vehicle (like a horse), but support for transitions to the ridden object
+  (dead horse or tipped horse cart).
+
+--Fixed so that creation sound not played for items dropped on the ground when
+  held container shrinks.
+
+
+
+
 Version 105   2018-June-1
 
 --Fixed crash in transition bank pattern code.  Thanks Enforcerke and Jookia.
